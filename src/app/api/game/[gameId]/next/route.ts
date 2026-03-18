@@ -28,6 +28,13 @@ export async function POST(
       );
     }
 
+    if (gameRoom.phase !== 'playing') {
+      return NextResponse.json(
+        { error: 'The game is not currently in progress' },
+        { status: 400 }
+      );
+    }
+
     const currentRound = gameRoom.rounds[gameRoom.currentRound];
     const currentQuestion = currentRound?.questions[gameRoom.currentQuestion];
 

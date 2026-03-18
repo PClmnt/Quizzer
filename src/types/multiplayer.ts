@@ -43,6 +43,7 @@ export interface GameRoom {
 export interface QuizSettings {
   amount: number;
   category?: number;
+  excludedCategories?: number[];
   difficulty?: 'easy' | 'medium' | 'hard';
   includeLogos: boolean;
   includeSounds: boolean;

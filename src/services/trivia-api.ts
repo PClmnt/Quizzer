@@ -1,10 +1,13 @@
-import { TriviaApiResponse, TriviaCategoriesResponse, QuizSettings, TriviaApiQuestion } from '@/types/trivia-api';
+import { TriviaApiResponse, TriviaCategoriesResponse, QuizSettings, TriviaApiQuestion, TriviaCategory } from '@/types/trivia-api';
 import { Question } from '@/types/quiz';
 
 const BASE_URL = 'https://opentdb.com';
+const MAX_QUESTIONS_PER_REQUEST = 50;
+const MAX_EXCLUSION_FETCH_ATTEMPTS = 6;
 
 export class TriviaApiService {
   private static sessionToken: string | null = null;
+  private static categoriesCache: TriviaCategory[] | null = null;
 
   static async getSessionToken(): Promise<string> {
     if (this.sessionToken) {
@@ -27,13 +30,77 @@ export class TriviaApiService {
   }
 
   static async getCategories(): Promise<TriviaCategoriesResponse> {
+    if (this.categoriesCache) {
+      return { trivia_categories: this.categoriesCache };
+    }
+
     const response = await fetch(`${BASE_URL}/api_category.php`);
-    return response.json();
+    const data: TriviaCategoriesResponse = await response.json();
+    this.categoriesCache = data.trivia_categories;
+    return data;
   }
 
   static async getQuestions(settings: QuizSettings): Promise<TriviaApiQuestion[]> {
+    const excludedCategories = settings.excludedCategories ?? [];
+    const shouldFilterCategories = !settings.category && excludedCategories.length > 0;
+
+    if (!shouldFilterCategories) {
+      return this.fetchQuestionsBatch(settings);
+    }
+
+    const excludedCategoryNames = await this.getExcludedCategoryNames(excludedCategories);
+    if (excludedCategoryNames.size === 0) {
+      return this.fetchQuestionsBatch(settings);
+    }
+
+    const collectedQuestions: TriviaApiQuestion[] = [];
+    const seenQuestions = new Set<string>();
+    let attempts = 0;
+
+    while (
+      collectedQuestions.length < settings.amount &&
+      attempts < MAX_EXCLUSION_FETCH_ATTEMPTS
+    ) {
+      attempts += 1;
+
+      const remainingQuestions = settings.amount - collectedQuestions.length;
+      const batchSize = Math.min(
+        MAX_QUESTIONS_PER_REQUEST,
+        Math.max(remainingQuestions * 2, remainingQuestions)
+      );
+
+      const batchQuestions = await this.fetchQuestionsBatch({
+        ...settings,
+        amount: batchSize,
+      });
+
+      for (const question of batchQuestions) {
+        const categoryName = decodeURIComponent(question.category);
+        const questionKey = `${question.question}:${question.correct_answer}`;
+
+        if (excludedCategoryNames.has(categoryName) || seenQuestions.has(questionKey)) {
+          continue;
+        }
+
+        collectedQuestions.push(question);
+        seenQuestions.add(questionKey);
+
+        if (collectedQuestions.length === settings.amount) {
+          break;
+        }
+      }
+    }
+
+    if (collectedQuestions.length < settings.amount) {
+      throw new Error('Not enough questions available after applying your category filters');
+    }
+
+    return collectedQuestions;
+  }
+
+  private static async fetchQuestionsBatch(settings: QuizSettings): Promise<TriviaApiQuestion[]> {
     const token = await this.getSessionToken();
-    
+
     const params = new URLSearchParams({
       amount: settings.amount.toString(),
       encode: 'url3986', // URL encoding to handle special characters
@@ -51,12 +118,23 @@ export class TriviaApiService {
       if (data.response_code === 4) {
         // Token expired, reset and try again
         await this.resetSessionToken();
-        return this.getQuestions(settings);
+        return this.fetchQuestionsBatch(settings);
       }
       throw new Error(`API Error: ${this.getErrorMessage(data.response_code)}`);
     }
 
     return data.results;
+  }
+
+  private static async getExcludedCategoryNames(excludedCategoryIds: number[]): Promise<Set<string>> {
+    const { trivia_categories } = await this.getCategories();
+    const excludedCategoryIdSet = new Set(excludedCategoryIds);
+
+    return new Set(
+      trivia_categories
+        .filter((category) => excludedCategoryIdSet.has(category.id))
+        .map((category) => category.name)
+    );
   }
 
   static async resetSessionToken(): Promise<void> {

@@ -24,6 +24,7 @@ export default function HomePage() {
   const [settings, setSettings] = useState<QuizSettings>({
     amount: 10,
     difficulty: 'medium',
+    excludedCategories: [],
     includeLogos: true,
     includeSounds: true,
     questionTimeLimit: 30,
@@ -39,6 +40,14 @@ export default function HomePage() {
     loadCategories();
   }, []);
 
+  const excludedCategoryIds = settings.excludedCategories ?? [];
+  const sportsCategory = categories.find(
+    (category) => category.name.toLowerCase() === 'sports'
+  );
+  const excludedCategoryNames = categories
+    .filter((category) => excludedCategoryIds.includes(category.id))
+    .map((category) => category.name);
+
   const loadCategories = async () => {
     try {
       const response = await TriviaApiService.getCategories();
@@ -48,6 +57,20 @@ export default function HomePage() {
     } finally {
       setCategoriesLoading(false);
     }
+  };
+
+  const toggleExcludedCategory = (categoryId: number) => {
+    setSettings((currentSettings) => {
+      const currentExcludedCategories = currentSettings.excludedCategories ?? [];
+      const isExcluded = currentExcludedCategories.includes(categoryId);
+
+      return {
+        ...currentSettings,
+        excludedCategories: isExcluded
+          ? currentExcludedCategories.filter((id) => id !== categoryId)
+          : [...currentExcludedCategories, categoryId],
+      };
+    });
   };
 
   const createGame = async () => {
@@ -232,7 +255,10 @@ export default function HomePage() {
                     ) : (
                       <select 
                         value={settings.category || ''}
-                        onChange={(e) => setSettings({...settings, category: e.target.value ? Number(e.target.value) : undefined})}
+                        onChange={(e) => setSettings({
+                          ...settings,
+                          category: e.target.value ? Number(e.target.value) : undefined
+                        })}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="">Any Category</option>
@@ -241,6 +267,54 @@ export default function HomePage() {
                         ))}
                       </select>
                     )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-2">Question Filters</label>
+                    <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                      {sportsCategory && (
+                        <label className="flex items-center text-sm font-medium">
+                          <input
+                            type="checkbox"
+                            checked={excludedCategoryIds.includes(sportsCategory.id)}
+                            onChange={() => toggleExcludedCategory(sportsCategory.id)}
+                            disabled={Boolean(settings.category)}
+                            className="mr-2"
+                          />
+                          Avoid Sports questions
+                        </label>
+                      )}
+
+                      <p className="text-sm text-gray-600">
+                        {settings.category
+                          ? 'Category exclusions only apply when Category is set to Any.'
+                          : 'Block any categories you do not want in the trivia round.'}
+                      </p>
+
+                      {!categoriesLoading && (
+                        <div className="max-h-48 space-y-2 overflow-y-auto rounded-md border border-gray-200 bg-white p-3">
+                          {categories
+                            .filter((category) => category.id !== sportsCategory?.id)
+                            .map((category) => (
+                              <label
+                                key={category.id}
+                                className={`flex items-center text-sm ${
+                                  settings.category ? 'text-gray-400' : 'text-gray-700'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={excludedCategoryIds.includes(category.id)}
+                                  onChange={() => toggleExcludedCategory(category.id)}
+                                  disabled={Boolean(settings.category)}
+                                  className="mr-2"
+                                />
+                                {category.name}
+                              </label>
+                            ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Extra Rounds */}
@@ -307,6 +381,11 @@ export default function HomePage() {
                         settings.category ? 
                         categories.find(c => c.id === settings.category)?.name || 'Unknown' :
                         'Any'
+                      }</p>
+                      <p><strong>Excluded Categories:</strong> {
+                        excludedCategoryNames.length > 0
+                          ? excludedCategoryNames.join(', ')
+                          : 'None'
                       }</p>
                       <p><strong>Game Mode:</strong> {gameMode === 'teams' ? '👥 Teams' : '👤 Individual'}</p>
                     </div>

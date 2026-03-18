@@ -38,8 +38,20 @@ export async function POST(
       return NextResponse.json({ error: 'Game is not in team mode' }, { status: 400 });
     }
 
+    if (gameRoom.phase !== 'setup') {
+      return NextResponse.json({ error: 'Teams can only be changed during setup' }, { status: 400 });
+    }
+
+    if (player.gameId !== gameId) {
+      return NextResponse.json({ error: 'Player is not in this game' }, { status: 400 });
+    }
+
+    if (team.gameId !== gameId || !gameRoom.teams.includes(teamId)) {
+      return NextResponse.json({ error: 'Team does not belong to this game' }, { status: 400 });
+    }
+
     // Check if player is already in a team
-    if (player.teamId) {
+    if (player.teamId || team.playerIds.includes(playerId)) {
       return NextResponse.json({ error: 'Player is already in a team' }, { status: 400 });
     }
 
@@ -49,22 +61,34 @@ export async function POST(
       return NextResponse.json({ error: 'Team is full' }, { status: 400 });
     }
 
-    // Add player to team
-    team.playerIds.push(playerId);
-    player.teamId = teamId;
+    const updatedTeam: Team = {
+      ...team,
+      playerIds: [...team.playerIds, playerId],
+    };
+
+    const updatedPlayer: PlayerSession = {
+      ...player,
+      teamId,
+    };
 
     // If team had no captain, make this player the captain
-    if (!team.captainId) {
-      team.captainId = playerId;
+    if (!updatedTeam.captainId) {
+      updatedTeam.captainId = playerId;
     }
+
+    const updatedGameRoom: GameRoom = {
+      ...gameRoom,
+      updatedAt: new Date(),
+    };
 
     // Update storage
     await Promise.all([
-      kv.set(`team:${teamId}`, team),
-      kv.set(`player:${playerId}`, player)
+      kv.set(`team:${teamId}`, updatedTeam),
+      kv.set(`player:${playerId}`, updatedPlayer),
+      kv.set(`game:${gameId}`, updatedGameRoom),
     ]);
 
-    return NextResponse.json({ team, player });
+    return NextResponse.json({ team: updatedTeam, player: updatedPlayer });
   } catch (error) {
     console.error('Error joining team:', error);
     return NextResponse.json(

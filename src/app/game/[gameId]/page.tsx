@@ -61,13 +61,7 @@ export default function MultiplayerGame() {
   }, [gameId]);
 
   useEffect(() => {
-    // Check if player ID is stored in localStorage
-    const storedPlayerId = localStorage.getItem(`player_${gameId}`);
-    if (storedPlayerId) {
-      loadGameState();
-    } else {
-      setGameState(prev => ({ ...prev, loading: false }));
-    }
+    loadGameState();
   }, [gameId, loadGameState]);
 
   // Poll for game state updates
@@ -252,6 +246,12 @@ export default function MultiplayerGame() {
   const { gameRoom, players, teams, currentPlayer } = gameState;
   if (!gameRoom) return null;
 
+  const hasUnassignedPlayers =
+    gameRoom.gameMode === 'teams' && players.some((player) => !player.teamId);
+  const hasEmptyTeams =
+    gameRoom.gameMode === 'teams' && teams.some((team) => team.playerIds.length === 0);
+  const teamSetupIncomplete = hasUnassignedPlayers || hasEmptyTeams;
+
   // Setup phase - waiting for host to start
   if (gameRoom.phase === 'setup') {
     return (
@@ -343,10 +343,12 @@ export default function MultiplayerGame() {
                 onClick={startGame} 
                 className="w-full" 
                 size="lg"
-                disabled={gameRoom.gameMode === 'teams' && teams.some(team => team.playerIds.length === 0)}
+                disabled={teamSetupIncomplete}
               >
-                {gameRoom.gameMode === 'teams' && teams.some(team => team.playerIds.length === 0) 
-                  ? 'All teams need at least one player' 
+                {teamSetupIncomplete
+                  ? hasUnassignedPlayers
+                    ? 'All players need a team'
+                    : 'All teams need at least one player'
                   : 'Start Game'}
               </Button>
             )}

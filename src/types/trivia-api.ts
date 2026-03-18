@@ -24,6 +24,7 @@ export interface TriviaCategoriesResponse {
 export interface QuizSettings {
   amount: number;
   category?: number;
+  excludedCategories?: number[];
   difficulty?: 'easy' | 'medium' | 'hard';
   type?: 'multiple' | 'boolean';
 }
