@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { kv } from "@/lib/kv";
 import { PlayerSession, Team } from "@/types/multiplayer";
 import { getGameRoomByIdentifier } from "@/lib/game-room";
+import { syncTeamAssignments } from "@/lib/team-sync";
 
 function toPublicPlayerSession(playerSession: PlayerSession): PlayerSession {
   const publicPlayerSession = { ...playerSession };
@@ -33,11 +34,7 @@ export async function GET(
       })
     );
 
-    const validPlayers = players.filter(Boolean) as PlayerSession[];
-    const publicPlayers = validPlayers.map(toPublicPlayerSession);
-    const currentPlayer = playerId
-      ? validPlayers.find((player) => player.id === playerId) ?? null
-      : null;
+    let validPlayers = players.filter(Boolean) as PlayerSession[];
 
     // Get teams if in team mode
     let teams: Team[] = [];
@@ -49,7 +46,23 @@ export async function GET(
         })
       );
       teams = teamData.filter(Boolean) as Team[];
+
+      const syncedState = syncTeamAssignments(validPlayers, teams);
+      validPlayers = syncedState.players;
+      teams = syncedState.teams;
+
+      if (syncedState.changed) {
+        await Promise.all([
+          ...syncedState.players.map((player) => kv.set(`player:${player.id}`, player)),
+          ...syncedState.teams.map((team) => kv.set(`team:${team.id}`, team)),
+        ]);
+      }
     }
+
+    const publicPlayers = validPlayers.map(toPublicPlayerSession);
+    const currentPlayer = playerId
+      ? validPlayers.find((player) => player.id === playerId) ?? null
+      : null;
 
     // Create a copy of gameRoom for the response
     let responseGameRoom: unknown = { ...gameRoom };

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { kv } from '@/lib/kv';
 import { GameRoom, PlayerSession, Team } from '@/types/multiplayer';
 import { getGameRoomByIdentifier } from '@/lib/game-room';
+import { syncTeamAssignments } from '@/lib/team-sync';
 
 export async function POST(
   request: NextRequest,
@@ -49,8 +50,19 @@ export async function POST(
         Promise.all(gameRoom.teams.map((id) => kv.get<Team>(`team:${id}`))),
       ]);
 
-      const validPlayers = players.filter(Boolean) as PlayerSession[];
-      const validTeams = teams.filter(Boolean) as Team[];
+      let validPlayers = players.filter(Boolean) as PlayerSession[];
+      let validTeams = teams.filter(Boolean) as Team[];
+
+      const syncedState = syncTeamAssignments(validPlayers, validTeams);
+      validPlayers = syncedState.players;
+      validTeams = syncedState.teams;
+
+      if (syncedState.changed) {
+        await Promise.all([
+          ...syncedState.players.map((player) => kv.set(`player:${player.id}`, player)),
+          ...syncedState.teams.map((team) => kv.set(`team:${team.id}`, team)),
+        ]);
+      }
 
       if (validTeams.length === 0) {
         return NextResponse.json(
