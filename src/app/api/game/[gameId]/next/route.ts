@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { kv } from '@/lib/kv';
-import { GameRoom, PlayerSession, Team } from '@/types/multiplayer';
+import { GameRoom, PlayerSession, QuestionResult, Team } from '@/types/multiplayer';
 import { getGameRoomByIdentifier } from '@/lib/game-room';
 
 export async function POST(
@@ -29,9 +29,9 @@ export async function POST(
       );
     }
 
-    if (gameRoom.phase !== 'playing') {
+    if (gameRoom.phase !== 'playing' && gameRoom.phase !== 'results') {
       return NextResponse.json(
-        { error: 'The game is not currently in progress' },
+        { error: 'The game is not currently ready to advance' },
         { status: 400 }
       );
     }
@@ -46,19 +46,59 @@ export async function POST(
       );
     }
 
-    // Calculate scores for this question
+    if (gameRoom.phase === 'results') {
+      let updatedGameRoom: GameRoom;
+
+      if (gameRoom.currentQuestion < currentRound.questions.length - 1) {
+        updatedGameRoom = {
+          ...gameRoom,
+          currentQuestion: gameRoom.currentQuestion + 1,
+          phase: 'playing',
+          currentQuestionStartedAt: new Date(),
+          currentQuestionResult: undefined,
+          resultsStartedAt: undefined,
+          updatedAt: new Date()
+        };
+      } else if (gameRoom.currentRound < gameRoom.rounds.length - 1) {
+        updatedGameRoom = {
+          ...gameRoom,
+          currentRound: gameRoom.currentRound + 1,
+          currentQuestion: 0,
+          phase: 'playing',
+          currentQuestionStartedAt: new Date(),
+          currentQuestionResult: undefined,
+          resultsStartedAt: undefined,
+          updatedAt: new Date()
+        };
+      } else {
+        updatedGameRoom = {
+          ...gameRoom,
+          phase: 'finished',
+          currentQuestionResult: undefined,
+          resultsStartedAt: undefined,
+          updatedAt: new Date()
+        };
+      }
+
+      await kv.set(`game:${resolvedGameId}`, updatedGameRoom);
+
+      return NextResponse.json({
+        success: true,
+        gameRoom: updatedGameRoom
+      });
+    }
+
     const players = await Promise.all(
       gameRoom.players.map(id => kv.get<PlayerSession>(`player:${id}`))
     );
-
     const validPlayers = players.filter(Boolean) as PlayerSession[];
-    // Update player scores
+
     const updatedPlayers = await Promise.all(
       validPlayers.map(async (player) => {
         const playerAnswer = player.answers[currentQuestion.id];
         const isCorrect = playerAnswer === currentQuestion.correctAnswer;
         const points = isCorrect ? 10 : 0;
-        
+
         const updatedPlayer: PlayerSession = {
           ...player,
           score: player.score + points
@@ -69,7 +109,6 @@ export async function POST(
       })
     );
 
-    // Update team scores in team mode
     let teams: Team[] = [];
     if (gameRoom.gameMode === 'teams') {
       teams = await Promise.all(
@@ -77,8 +116,7 @@ export async function POST(
           const team = await kv.get<Team>(`team:${teamId}`);
           if (!team) return null;
 
-          // Calculate team score by summing player scores
-          const teamPlayers = updatedPlayers.filter(p => p.teamId === teamId);
+          const teamPlayers = updatedPlayers.filter((player) => player.teamId === teamId);
           const teamScore = teamPlayers.reduce((sum, player) => sum + player.score, 0);
 
           const updatedTeam: Team = {
@@ -89,39 +127,47 @@ export async function POST(
           await kv.set(`team:${teamId}`, updatedTeam);
           return updatedTeam;
         })
-      ).then(teams => teams.filter(Boolean) as Team[]);
+      ).then((teamList) => teamList.filter(Boolean) as Team[]);
     }
 
-    // Determine next state
-    let updatedGameRoom: GameRoom;
+    const questionResult: QuestionResult = {
+      questionId: currentQuestion.id,
+      correctAnswer: currentQuestion.correctAnswer,
+      playerResults: validPlayers.map((player) => ({
+        playerId: player.id,
+        teamId: player.teamId,
+        answerIndex: player.answers[currentQuestion.id],
+        isCorrect: player.answers[currentQuestion.id] === currentQuestion.correctAnswer,
+        points: player.answers[currentQuestion.id] === currentQuestion.correctAnswer ? 10 : 0
+      })),
+      teamResults: gameRoom.gameMode === 'teams'
+        ? teams.map((team) => {
+            const teamPlayers = validPlayers.filter((player) => player.teamId === team.id);
+            const answeredPlayer = teamPlayers.find(
+              (player) => player.answers[currentQuestion.id] !== undefined
+            );
+            const points =
+              answeredPlayer &&
+              answeredPlayer.answers[currentQuestion.id] === currentQuestion.correctAnswer
+                ? 10
+                : 0;
 
-    if (gameRoom.currentQuestion < currentRound.questions.length - 1) {
-      // Next question in same round
-      updatedGameRoom = {
-        ...gameRoom,
-        currentQuestion: gameRoom.currentQuestion + 1,
-        phase: 'playing',
-        currentQuestionStartedAt: new Date(),
-        updatedAt: new Date()
-      };
-    } else if (gameRoom.currentRound < gameRoom.rounds.length - 1) {
-      // Next round
-      updatedGameRoom = {
-        ...gameRoom,
-        currentRound: gameRoom.currentRound + 1,
-        currentQuestion: 0,
-        phase: 'playing',
-        currentQuestionStartedAt: new Date(),
-        updatedAt: new Date()
-      };
-    } else {
-      // Game finished
-      updatedGameRoom = {
-        ...gameRoom,
-        phase: 'finished',
-        updatedAt: new Date()
-      };
-    }
+            return {
+              teamId: team.id,
+              points,
+              answeredBy: answeredPlayer?.id
+            };
+          })
+        : undefined
+    };
+
+    const updatedGameRoom: GameRoom = {
+      ...gameRoom,
+      phase: 'results',
+      currentQuestionResult: questionResult,
+      resultsStartedAt: new Date(),
+      updatedAt: new Date()
+    };
 
     await kv.set(`game:${resolvedGameId}`, updatedGameRoom);
 
@@ -130,28 +176,7 @@ export async function POST(
       gameRoom: updatedGameRoom,
       players: updatedPlayers,
       teams,
-      questionResult: {
-        questionId: currentQuestion.id,
-        correctAnswer: currentQuestion.correctAnswer,
-        playerResults: validPlayers.map(player => ({
-          playerId: player.id,
-          teamId: player.teamId,
-          answerIndex: player.answers[currentQuestion.id],
-          isCorrect: player.answers[currentQuestion.id] === currentQuestion.correctAnswer,
-          points: player.answers[currentQuestion.id] === currentQuestion.correctAnswer ? 10 : 0
-        })),
-        teamResults: gameRoom.gameMode === 'teams' ? teams.map(team => {
-          const teamPlayers = validPlayers.filter(p => p.teamId === team.id);
-          const answeredPlayer = teamPlayers.find(p => p.answers[currentQuestion.id] !== undefined);
-          const points = answeredPlayer && answeredPlayer.answers[currentQuestion.id] === currentQuestion.correctAnswer ? 10 : 0;
-          
-          return {
-            teamId: team.id,
-            points,
-            answeredBy: answeredPlayer?.id
-          };
-        }) : undefined
-      }
+      questionResult
     });
 
   } catch (error) {

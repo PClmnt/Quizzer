@@ -39,7 +39,9 @@ export interface GameRoom {
   createdAt: Date;
   updatedAt: Date;
   currentQuestionStartedAt?: Date;
+  resultsStartedAt?: Date;
   questionTimeLimit?: number; // seconds
+  currentQuestionResult?: QuestionResult;
 }
 
 export interface QuizSettings {

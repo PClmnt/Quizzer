@@ -54,6 +54,9 @@ export async function GET(
     // Create a copy of gameRoom for the response
     let responseGameRoom: unknown = { ...gameRoom };
 
+    const revealedQuestionId =
+      gameRoom.phase === "results" ? gameRoom.currentQuestionResult?.questionId : null;
+
     // If the requester is NOT the host, remove correct answer indexes from questions
     const isHost = playerId && gameRoom.hostId === playerId;
     if (!isHost) {
@@ -62,6 +65,10 @@ export async function GET(
         rounds: gameRoom.rounds.map((round) => ({
           ...round,
           questions: round.questions.map((question) => {
+            if (question.id === revealedQuestionId) {
+              return question;
+            }
+
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { correctAnswer, ...questionWithoutAnswer } = question;
             return questionWithoutAnswer;
