@@ -1,4 +1,4 @@
-# Family Quiz Game
+# Quiz Game
 
 A multiplayer trivia web app built with **Next.js** (App Router), **React 19**, and **Tailwind CSS**. Hosts create a room; players join on their phones or laptops using a short room code or share link. Questions are loaded from the public [Open Trivia Database](https://opentdb.com/) API, with optional logo and sound rounds layered on top of the main quiz.
 

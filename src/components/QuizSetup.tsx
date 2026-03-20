@@ -74,7 +74,7 @@ export default function QuizSetup({ players, onPlayersChange, onStartGame }: Qui
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 flex items-center justify-center">
       <Card className="w-full max-w-4xl">
         <CardHeader className="text-center">
-          <CardTitle className="text-3xl font-bold text-gray-800">Family Quiz Game</CardTitle>
+          <CardTitle className="text-3xl font-bold text-gray-800">Quiz Game</CardTitle>
           <p className="text-gray-600">Configure your quiz and add players to start</p>
         </CardHeader>
         <CardContent className="space-y-8">

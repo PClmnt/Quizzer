@@ -135,8 +135,8 @@ export default function HomePage() {
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 flex items-center justify-center">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
-            <CardTitle className="text-3xl font-bold text-gray-800">Family Quiz Game</CardTitle>
-            <p className="text-gray-600">Play trivia with friends and family</p>
+            <CardTitle className="text-3xl font-bold text-gray-800">Quiz Game</CardTitle>
+            <p className="text-gray-600">Play trivia with friends</p>
           </CardHeader>
           <CardContent className="space-y-4">
             <Button 
